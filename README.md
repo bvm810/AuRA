@@ -7,10 +7,17 @@ This repository contains the official implementation of the "Exploring Represent
 Our paper is, to the best of our knowledge, the first application of audio [representation autoencoders](https://github.com/bytetriper/RAE) (AuRA). In addition to providing trained decoders for [MATPAC++](https://github.com/aurianworld/matpac/tree/main) and [BEATs](https://github.com/microsoft/unilm/tree/master/beats), we also evaluate the two AuRAs against VAEs commonly used in text-to-audio generation using a common generative backbone. A link to the paper with more details will be provided upon acceptance.
 
 **TODO -- Reconstruction Code**
-- [ ] Clean neural network modules file 
-- [ ] Clean configs
-- [ ] Clean dataloader
-- [ ] Clean Lightning Module
+- [x] Clean neural network modules file
+  - [x] DiT blocks
+  - [x] Decoder
+  - [x] Schedules
+- [x] Clean configs
+- [x] Clean dataloader
+- [x] Clean Lightning Module
+- [x] Clean factory
+- [x] Inference script
+- [ ] Test training
+- [ ] Test inference
 - [ ] Upload checkpoints to MATPAC++ and BEATs decoders
 
 **TODO -- Generation Code**
