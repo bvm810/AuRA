@@ -17,14 +17,14 @@ from src.reconstruction.system import LitRAEDecoder
 def main():
     parser = argparse.ArgumentParser(description="Reconstruction inference script for AuRA decoders.")
     parser.add_argument("--config_id", type=str, required=True, help="Configuration ID from src/reconstruction/config.py")
-    parser.add_argument("--checkpoint", type=str, default=None, help="Overrides the config's training checkpoint when set.")
+    parser.add_argument("--checkpoint", type=str, default=None, help="Overrides the config's evaluation checkpoint when set.")
     parser.add_argument("--seed", type=int, default=42, help="Seed to use for reproducibility.")
     args = parser.parse_args()
 
     config = CONFIGS[args.config_id]
     set_seeds(args.seed)
 
-    checkpoint = args.checkpoint or config["training"]["checkpoint"]
+    checkpoint = args.checkpoint or config["evaluation"]["checkpoint"]
     results, summary = run_inference(config, args.config_id, checkpoint)
     save_dir = config["evaluation"]["save"]["save_dir"]
     results.to_csv(os.path.join(save_dir, "results.csv"), index=False)
@@ -47,9 +47,7 @@ def load_system(config_id: str, checkpoint: str) -> LitRAEDecoder:
 
 def build_loader(config: dict) -> DataLoader:
     print("Loading dataset")
-    params = config["evaluation"]["dataset"].copy()
-    params.pop("caption_column", None)
-    dataset = AudioDataset(deterministic_crop=True, split="test", **params)
+    dataset = AudioDataset(deterministic_crop=True, split="test", **config["evaluation"]["dataset"])
     # caption metadata lists a clip once per caption for AudioCaps, but each clip only needs to be reconstructed once
     # for WavCaps there is a single caption per clip, so no need to drop duplicates
     dataset.metadata = dataset.metadata.drop_duplicates(dataset.audio_column, ignore_index=True)
@@ -76,9 +74,9 @@ def run_inference(config: dict, config_id: str, checkpoint: str):
     print("Reconstructing samples")
     records = []
     for audio, paths in tqdm(loader):
-        # the encoder resamples from the dataset rate; reference and reconstruction are compared at EVAL_SAMPLE_RATE
+        # eval sets are loaded at the training rate expected by the encoder; reference and reconstruction are compared at EVAL_SAMPLE_RATE
         audio = audio.to(system.device)                                         # (B, T) at the dataset rate
-        recon = system.decoder.decode(system.encoder(audio, sr))                # (B, 1, T') at the decoder rate
+        recon = system.decoder.decode(system.encoder(audio))                    # (B, 1, T') at the decoder rate
         recon = to_eval_rate(recon, system.decoder.sample_rate)                 # (B, 1, T_eval)
         audio = to_eval_rate(audio, sr).unsqueeze(1)                            # (B, 1, T_eval), same layout as recon
 

@@ -1,5 +1,40 @@
 from src.common.constants import *
 
+
+AUDIOSET_CONFIG = {
+    "root_dir": AUDIOSET_DIR,
+    "csv_name": "metadata.csv",
+    "audio_dir_name": "audio",
+    "audio_column": "filepath",
+    "split_column": "split",
+    "preprocessing_params": {
+        "sample_rate": DATASET_SAMPLE_RATES["audioset"],
+        "segment_length": SEGMENT_LENGTH_16K
+    }
+}
+
+AUDIOCAPS_EVAL_CONFIG = {
+    "root_dir": AUDIOCAPS_DIR,
+    "csv_name": "metadata.csv",
+    "audio_dir_name": "audio",
+    "audio_column": "filepath",
+    "split_column": "split",
+    "preprocessing_params": AUDIOSET_CONFIG["preprocessing_params"],
+    "return_path": True,
+}
+
+WAVCAPS_EVAL_CONFIG = {
+    "root_dir": WAVCAPS_DIR,
+    "csv_name": "isolated-eval.csv",
+    "audio_dir_name": "audio",
+    "audio_column": "filepath",
+    "split_column": "split",
+    "preprocessing_params": AUDIOSET_CONFIG["preprocessing_params"],
+    "return_path": True,
+}
+
+CHECKPOINT_INTERVAL = 14_400  # 10% of the 144,000 training steps
+
 BASE_RECONSTRUCTION_TRAINING = {
     "ema": {
         "decay": 0.9999,
@@ -54,16 +89,17 @@ BASE_RECONSTRUCTION_TRAINING = {
 
 CONFIGS = {
     "reconstruction-matpac": {
-        "encoder": encoder_config("matpac"),
+        "encoder": encoder_config("matpac", "audioset"),
         "decoder": decoder_config("matpac", None),
         "training": {
             **BASE_RECONSTRUCTION_TRAINING,
             "logger": {"save_dir": LOGS_DIR / "reconstruction-matpac"},
-            "checkpointing": checkpointing_config(interval=14_400, save_dir=CHECKPOINT_DIR / "reconstruction-matpac"),
+            "checkpointing": checkpointing_config(interval=CHECKPOINT_INTERVAL, save_dir=CHECKPOINT_DIR / "reconstruction-matpac"),
             "checkpoint": CHECKPOINT_DIR / "reconstruction-matpac" / "last.ckpt",
             "dataloaders": loader_config(batch_size=64, num_workers=10),
         },
         "evaluation": {
+            "checkpoint": CHECKPOINT_DIR / "reconstruction-matpac" / "last.ckpt",  # placeholder, point to the checkpoint to evaluate
             "dataset": AUDIOCAPS_EVAL_CONFIG,
             "dataloaders": loader_config(batch_size=64, num_workers=10)["validation"],
             "save": {
@@ -75,16 +111,17 @@ CONFIGS = {
         }
     },
     "reconstruction-beats": {
-        "encoder": encoder_config("beats"),
+        "encoder": encoder_config("beats", "audioset"),
         "decoder": decoder_config("beats", None),
         "training": {
             **BASE_RECONSTRUCTION_TRAINING,
             "logger": {"save_dir": LOGS_DIR / "reconstruction-beats"},
-            "checkpointing": checkpointing_config(interval=14_400, save_dir=CHECKPOINT_DIR / "reconstruction-beats"),
+            "checkpointing": checkpointing_config(interval=CHECKPOINT_INTERVAL, save_dir=CHECKPOINT_DIR / "reconstruction-beats"),
             "checkpoint": CHECKPOINT_DIR / "reconstruction-beats" / "last.ckpt",
             "dataloaders": loader_config(batch_size=64, num_workers=10),
         },
         "evaluation": {
+            "checkpoint": CHECKPOINT_DIR / "reconstruction-beats" / "last.ckpt",  # placeholder, point to the checkpoint to evaluate
             "dataset": AUDIOCAPS_EVAL_CONFIG,
             "dataloaders": loader_config(batch_size=64, num_workers=10)["validation"],
             "save": {

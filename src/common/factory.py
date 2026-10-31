@@ -63,12 +63,6 @@ def get_reconstruction_losses(losses_config: dict) -> dict:
     return losses
 
 def get_loss(loss_name: str, params: dict = {}):
-    # mel-spec losses
-    if loss_name == "L2":
-        return torch.nn.MSELoss(**params)
-    if loss_name == "L1":
-        return torch.nn.L1Loss(**params)
-
     # waveform losses
     if loss_name == "MR-STFT":
         return auraloss.freq.MultiResolutionSTFTLoss(**params)

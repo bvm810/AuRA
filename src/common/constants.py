@@ -17,6 +17,9 @@ RESULTS_DIR = ROOT / "results"
 
 MATPAC_DIR = CHECKPOINT_DIR / "matpac"
 BEATS_DIR = CHECKPOINT_DIR / "beats"
+SAO_DIR = CHECKPOINT_DIR / "sao"
+SAME_DIR = CHECKPOINT_DIR / "same"
+AUDIOLDM2_DIR = CHECKPOINT_DIR / "audioldm2"
 
 AUDIOSET_DIR = HOME / "data" / "audioset"
 AUDIOCAPS_DIR = HOME / "data" / "audiocaps"
@@ -51,12 +54,36 @@ ENCODER_DEFAULT_CONFIGS = {
             "pull_time_dimension": False,
             "concat_freq": True,
         },
-        "sample_rate": SSL_SAMPLE_RATE
+        "input_sample_rate": SSL_SAMPLE_RATE
     },
     "beats": {
         "type": "beats",
         "model": {"checkpoint_path": f"{BEATS_DIR}/beats_iter3_pretrained_encoder.pt"},
-        "sample_rate": SSL_SAMPLE_RATE
+        "input_sample_rate": SSL_SAMPLE_RATE
+    },
+    "sao": {
+        "type": "sao",
+        "model": {"checkpoint_path": f"{SAO_DIR}"},
+        "input_sample_rate": 44_100
+    },
+    "same": {
+        "type": "same",
+        "model": {"checkpoint_path": f"{SAME_DIR}"},
+        "input_sample_rate": 44_100
+    },
+    "audioldm2": {
+        "type": "audioldm2",
+        "model": {"checkpoint_path": f"{AUDIOLDM2_DIR}"},
+        "mel": {
+            "sample_rate": 16_000,
+            "n_fft": 1024,
+            "hop_length": 160,
+            "win_length": 1024,
+            "n_mels": 64,
+            "fmin": 0,
+            "fmax": 8000,
+        },
+        "input_sample_rate": 16_000
     },
 }
 
@@ -111,65 +138,38 @@ DIT_DECODER_DEFAULT_CONFIG = {
 DECODER_DEFAULT_CONFIGS = {
     "matpac": DIT_DECODER_DEFAULT_CONFIG,
     "beats": DIT_DECODER_DEFAULT_CONFIG,
+    "sao": {"type": "sao", "model": {"checkpoint_path": f"{SAO_DIR}"}},
+    "same": {"type": "same", "model": {"checkpoint_path": f"{SAME_DIR}"}},
+    "audioldm2": {"type": "audioldm2", "model": {"checkpoint_path": f"{AUDIOLDM2_DIR}"}},
+}
+
+
+############################### T5 AND CLAP DEFAULTS ####################################
+
+
+TEXT_ENCODER_DEFAULT_CONFIG = {
+    "type": "t5",
+    "model": {"checkpoint_path": "google-t5/t5-base"},
+    "tokenization_params": {
+        "padding": "max_length",
+        "max_length": 64,
+        "truncation": True,
+    },
+}
+
+CLAP_DEFAULT_CONFIG = {
+    "type": "clap",
+    "model": {"checkpoint_path": "laion/clap-htsat-unfused"},
+    "feature_extraction": {"truncation": "rand_trunc", "padding": "repeatpad"},
+    "tokenization_params": {"padding": True, "truncation": True},
+    "max_duration": 10.0,
 }
 
 
 ######################################## DATA #####################################################
 
 
-AUDIOSET_CONFIG = {
-    "root_dir": AUDIOSET_DIR,
-    "csv_name": "metadata.csv",
-    "audio_dir_name": "audio",
-    "audio_column": "filepath",
-    "split_column": "split",
-    "preprocessing_params": {
-        "sample_rate": DATASET_SAMPLE_RATES["audioset"],
-        "segment_length": SEGMENT_LENGTH_16K
-    }
-}
-
-WAVCAPS_CONFIG = {
-    "root_dir": WAVCAPS_DIR,
-    "csv_name": "long-segments.csv",
-    "audio_dir_name": "audio",
-    "audio_column": "filepath",
-    "caption_column": "caption",
-    "split_column": "split",
-    "preprocessing_params": {
-        "sample_rate": DATASET_SAMPLE_RATES["wavcaps"],
-        "segment_length": SEGMENT_LENGTH_32K
-    }
-}
-
-AUDIOCAPS_EVAL_CONFIG = {
-    "root_dir": AUDIOCAPS_DIR,
-    "csv_name": "metadata.csv",
-    "audio_dir_name": "audio",
-    "audio_column": "filepath",
-    "split_column": "split",
-    "preprocessing_params": {
-        "sample_rate": DATASET_SAMPLE_RATES["audiocaps"],
-        "segment_length": SEGMENT_LENGTH_16K
-    },
-    "return_path": True,
-}
-
-WAVCAPS_EVAL_CONFIG = {
-    "root_dir": WAVCAPS_DIR,
-    "csv_name": "long-segments.csv",
-    "audio_dir_name": "audio",
-    "audio_column": "filepath",
-    "caption_column": "caption",
-    "split_column": "split",
-    "preprocessing_params": {
-        "sample_rate": DATASET_SAMPLE_RATES["wavcaps"],
-        "segment_length": SEGMENT_LENGTH_32K
-    },
-    "return_path": True,
-}
-
-DEFAULT_DATALOADERS = { 
+DEFAULT_DATALOADERS = {
     "train": {
         "persistent_workers": True,
         "pin_memory": True,
@@ -209,9 +209,12 @@ DEFAULT_CHECKPOINTING = [
 ######################################## BUILDERS #################################################
 
 
-def encoder_config(encoder: str):
+def encoder_config(encoder: str, dataset: str):
     base_conf = copy.deepcopy(ENCODER_DEFAULT_CONFIGS[encoder])
-    base_conf["resampling"] = {
+    target_sr = base_conf.pop("input_sample_rate")
+    base_conf["resampler"] = {
+        "orig_freq": DATASET_SAMPLE_RATES[dataset],
+        "new_freq": target_sr,
         "rolloff": 0.99,
         "resampling_method": "sinc_interp_kaiser",
         "lowpass_filter_width": 64,

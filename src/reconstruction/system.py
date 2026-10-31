@@ -21,15 +21,18 @@ class LitRAEDecoder(pl.LightningModule):
         super().__init__()
         self.config_id = config_id
         self.configs = CONFIGS[config_id]
-        self.overfit_mode = self.configs["training"]["trainer"]["overfit_batches"] > 0
+        self.overfit_mode = self.configs["training"]["trainer"].get("overfit_batches", 0) > 0
         self.decoder = get_decoder(self.configs["decoder"])
         self.encoder = get_encoder(self.configs["encoder"])
-        self.train_sr = self.configs["training"]["dataset"]["preprocessing_params"]["sample_rate"]
+        self._freeze_encoder()
         self.ema = get_ema(self.decoder, self.configs["training"]["ema"])
         self.heavy_log = False
         self.num_heavy_log_batches = self.configs["training"]["additional_logging"].get("num_heavy_log_batches", 16)
         self.val_losses = get_reconstruction_losses(self.configs["training"]["validation_losses"])
-        self.save_hyperparameters({"config_id": config_id})
+        self.save_hyperparameters({
+            "config_id": config_id,
+            "configs": json.loads(json.dumps(self.configs, default=str)),
+        })
 
     def _freeze_encoder(self):
         self.encoder.eval()
@@ -37,7 +40,7 @@ class LitRAEDecoder(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         stft = self.decoder.stft_processor(batch)
-        emb = self.encoder(batch, self.train_sr)
+        emb = self.encoder(batch)
         del batch
         loss = self.decoder.schedule.training_loss(self.decoder.model, stft, emb)
         self.log("Training loss", loss, sync_dist=True)
@@ -46,7 +49,7 @@ class LitRAEDecoder(pl.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         stft = self.decoder.stft_processor(batch)
-        emb = self.encoder(batch, self.train_sr)
+        emb = self.encoder(batch)
         loss = self.decoder.schedule.validation_loss(self.decoder.model, stft, emb)
         del stft
         if self.heavy_log and batch_idx < self.num_heavy_log_batches:

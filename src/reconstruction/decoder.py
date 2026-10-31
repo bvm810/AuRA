@@ -1,9 +1,13 @@
+import os
 import copy
 import torch
 import torch.nn as nn
 
 from abc import ABC, abstractmethod
+from diffusers import AutoencoderKL
+from transformers import SpeechT5HifiGan
 from timm.models.vision_transformer import PatchEmbed
+from stable_audio_tools.models import create_model_from_config_path
 
 from src.common.dit import LightningDiTBlock, LightningFinalLayer, VisionRotaryEmbeddingFast, GaussianFourierEmbedding, get_2d_sincos_pos_embed
 from src.common.schedule import get_schedule
@@ -55,6 +59,79 @@ class DiTDecoderWrapper(BaseDecoderWrapper):
         stft = self.schedule.sample(self.model, z)
         x = self.stft_processor.to_waveform(stft)
         return x
+
+
+class SAODecoderWrapper(BaseDecoderWrapper):
+    def __init__(self, decoder_params: dict):
+        super().__init__(decoder_params)
+        self.sample_rate = 44100
+
+    def _load(self, checkpoint_path: str) -> torch.nn.Module:
+        cfg_path = os.path.join(checkpoint_path, "sao-vae.json")
+        ckpt_path = os.path.join(checkpoint_path, "sao-vae.ckpt")
+        model = create_model_from_config_path(cfg_path)
+        model.load_state_dict(torch.load(ckpt_path, map_location="cpu")["state_dict"])
+        model.encoder = None
+        model.eval()
+        return model
+
+    def _decode(self, z: torch.Tensor) -> torch.Tensor:
+        z = z.transpose(1, 2) # (B, seq_len, D) --> (B, D, seq_len) --> SAO is channels-first
+        x = self.model.decode(z) # (B, 2, T)
+        x = x.mean(dim=1, keepdim=True) # (B, 1, T)
+        return x
+
+
+class SAMEDecoderWrapper(BaseDecoderWrapper):
+    def __init__(self, decoder_params: dict):
+        super().__init__(decoder_params)
+        self.sample_rate = 44100
+
+    def _load(self, checkpoint_path: str) -> torch.nn.Module:
+        cfg_path = os.path.join(checkpoint_path, "same.json")
+        ckpt_path = os.path.join(checkpoint_path, "same.ckpt")
+        model = create_model_from_config_path(cfg_path)
+        model.load_state_dict(torch.load(ckpt_path, map_location="cpu"))
+        model.encoder = None
+        model.eval()
+        return model
+
+    def _decode(self, z: torch.Tensor) -> torch.Tensor:
+        z = z.transpose(1, 2) # (B, seq_len, D) --> (B, D, seq_len) --> SAME is channels-first
+        x = self.model.decode(z) # (B, 2, T)
+        x = x.mean(dim=1, keepdim=True) # (B, 1, T)
+        return x
+
+
+class AudioLDM2DecoderWrapper(BaseDecoderWrapper):
+    def __init__(self, decoder_params: dict):
+        super().__init__(decoder_params)
+        self.vae = self.model["vae"]
+        self.vocoder = self.model["vocoder"]
+        self.scaling_factor = self.vae.config.scaling_factor
+        self.latent_channels = self.vae.config.latent_channels
+        self.sample_rate = 16000
+        assert self.sample_rate == self.vocoder.config.sampling_rate, f"Vocoder expects {self.sample_rate} Hz sample rate"
+
+    def _load(self, checkpoint_path: str) -> torch.nn.Module:
+        vae = AutoencoderKL.from_pretrained(checkpoint_path, subfolder="vae")
+        vae.encoder = None
+        vocoder = SpeechT5HifiGan.from_pretrained(checkpoint_path, subfolder="vocoder")
+        model = torch.nn.ModuleDict({"vae": vae, "vocoder": vocoder})
+        model.eval()
+        return model
+
+    def _decode(self, z: torch.Tensor) -> torch.Tensor:
+        batch_size, t_lat, d = z.shape
+        assert d % self.latent_channels == 0, f"Token dimension {d} does not divide evenly into {self.latent_channels} latent channels"
+        f_lat = d // self.latent_channels
+        z = z.reshape(batch_size, t_lat, self.latent_channels, f_lat).permute(0, 2, 1, 3).contiguous()
+        z = z / self.scaling_factor
+        mel = self.vae.decode(z).sample                                # (B, 1, frames, n_mels)
+        if mel.dim() == 4:
+            mel = mel.squeeze(1)                                       # (B, frames, n_mels)
+        audio = self.vocoder(mel)
+        return audio.unsqueeze(1).float()                              # (B, 1, T)
 
 
 ################################### pre / post processing #####################################
@@ -276,16 +353,15 @@ class ScaledPatchFrontend(torch.nn.Module):
 
 ################################################# Registry ########################################
 
-# TODO: Uncomment after refactoring generation stage
+
 DECODER_REGISTRY = {
     "dit": DiTDecoderWrapper,
-    # "sao": SAODecoderWrapper,
-    # "same": SAMEDecoderWrapper,
-    # "audioldm2": AudioLDM2DecoderWrapper,
+    "sao": SAODecoderWrapper,
+    "same": SAMEDecoderWrapper,
+    "audioldm2": AudioLDM2DecoderWrapper,
 }
 
 def get_decoder(config: dict) -> BaseDecoderWrapper:
     cfg = copy.deepcopy(config)
     decoder_type = cfg.pop("type")
     return DECODER_REGISTRY[decoder_type](cfg)
-

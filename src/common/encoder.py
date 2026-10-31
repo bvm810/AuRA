@@ -18,26 +18,20 @@ from src.common.beats.BEATs import BEATs, BEATsConfig
 class BaseAudioEncoderWrapper(torch.nn.Module, ABC):
     def __init__(self, encoder_params: dict):
         super().__init__()
-        self.sample_rate = encoder_params["sample_rate"]
-        self.resampling_params = encoder_params["resampling"]
-        self._resamplers = {}  # plain dict: kept out of state_dict, built on the right device
+        self.resampler = torchaudio.transforms.Resample(**encoder_params["resampler"])
         self.model = self._load(**encoder_params["model"])
 
     @abstractmethod
     def _load(self, **kwargs) -> torch.nn.Module:
         raise NotImplementedError
 
-    def forward(self, x: torch.Tensor, sr: int) -> torch.Tensor:
-        return self.encode(x, sr)
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.encode(x)
 
     @torch.no_grad()
-    def encode(self, x: torch.Tensor, sr: int) -> torch.Tensor:
-        return self._encode(self._resample(x, sr))
-
-    def _resample(self, x: torch.Tensor, sr: int) -> torch.Tensor:
-        if sr not in self._resamplers:
-            self._resamplers[sr] = torchaudio.transforms.Resample(sr, self.sample_rate, **self.resampling_params).to(x.device)
-        return self._resamplers[sr](x)
+    def encode(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.resampler(x)
+        return self._encode(x)
 
     @abstractmethod
     def _encode(self, x: torch.Tensor) -> torch.Tensor:
@@ -85,9 +79,9 @@ class SAOEncoderWrapper(BaseAudioEncoderWrapper):
     def __init__(self, encoder_params: dict):
         super().__init__(encoder_params)
 
-    def _load(self, checkpoint_dir: str) -> torch.nn.Module:
-        cfg_path = os.path.join(checkpoint_dir, "sao-vae.json")
-        ckpt_path = os.path.join(checkpoint_dir, "sao-vae.ckpt")
+    def _load(self, checkpoint_path: str) -> torch.nn.Module:
+        cfg_path = os.path.join(checkpoint_path, "sao-vae.json")
+        ckpt_path = os.path.join(checkpoint_path, "sao-vae.ckpt")
         model = create_model_from_config_path(cfg_path)
         model.load_state_dict(torch.load(ckpt_path, map_location="cpu")["state_dict"])
         model.decoder = None
@@ -104,9 +98,9 @@ class SAMEEncoderWrapper(BaseAudioEncoderWrapper):
     def __init__(self, encoder_params: dict):
         super().__init__(encoder_params)
 
-    def _load(self, checkpoint_dir: str) -> torch.nn.Module:
-        cfg_path = os.path.join(checkpoint_dir, "same.json")
-        ckpt_path = os.path.join(checkpoint_dir, "same.ckpt")
+    def _load(self, checkpoint_path: str) -> torch.nn.Module:
+        cfg_path = os.path.join(checkpoint_path, "same.json")
+        ckpt_path = os.path.join(checkpoint_path, "same.ckpt")
         model = create_model_from_config_path(cfg_path)
         model.load_state_dict(torch.load(ckpt_path, map_location="cpu"))
         model.decoder = None
@@ -171,14 +165,14 @@ class AudioLDM2EncoderWrapper(BaseAudioEncoderWrapper):
         super().__init__(encoder_params)
         self.scaling_factor = self.model.config.scaling_factor
         self.latent_channels = self.model.config.latent_channels
-        assert encoder_params["mel"]["sample_rate"] == self.sample_rate, (
-            f"AudioLDM2 mel requires {encoder_params['mel']['sample_rate']} Hz, got {self.sample_rate} Hz"
+        assert encoder_params["mel"]["sample_rate"] == encoder_params["resampler"]["new_freq"], (
+            f"AudioLDM2 mel requires {encoder_params['mel']['sample_rate']} Hz, got {encoder_params['resampler']['new_freq']} Hz"
         )
         downsample_factor = 2 ** (len(self.model.config.block_out_channels) - 1)
         self.mel = AudioLDM2Mel(encoder_params["mel"], downsample_factor)
 
-    def _load(self, checkpoint_dir: str) -> torch.nn.Module:
-        model = AutoencoderKL.from_pretrained(checkpoint_dir, subfolder="vae")
+    def _load(self, checkpoint_path: str) -> torch.nn.Module:
+        model = AutoencoderKL.from_pretrained(checkpoint_path, subfolder="vae")
         model.decoder = None
         model.eval()
         return model
@@ -233,9 +227,9 @@ class T5EncoderWrapper(BaseTextEncoderWrapper):
         super().__init__(encoder_params)
         self.hidden_size = self.model.config.d_model
 
-    def _load(self, checkpoint_dir: str) -> torch.nn.Module:
-        tokenizer = AutoTokenizer.from_pretrained(checkpoint_dir)
-        model = T5EncoderModel.from_pretrained(checkpoint_dir)
+    def _load(self, checkpoint_path: str) -> torch.nn.Module:
+        tokenizer = AutoTokenizer.from_pretrained(checkpoint_path)
+        model = T5EncoderModel.from_pretrained(checkpoint_path)
         model.eval()
         return model, tokenizer
 
@@ -257,9 +251,9 @@ class CLAPWrapper(torch.nn.Module):
         self.max_length = int(encoder_params["max_duration"] * self.sample_rate)
         self._resamplers = {}  # plain dict: kept out of state_dict, built on the right device
  
-    def _load(self, model_dir: str, preprocessor_dir: str) -> tuple[ClapModel, ClapProcessor]:
-        processor = ClapProcessor.from_pretrained(preprocessor_dir)
-        model = ClapModel.from_pretrained(model_dir)
+    def _load(self, checkpoint_path: str) -> tuple[ClapModel, ClapProcessor]:
+        processor = ClapProcessor.from_pretrained(checkpoint_path)
+        model = ClapModel.from_pretrained(checkpoint_path)
         model.eval()
         return model, processor
  

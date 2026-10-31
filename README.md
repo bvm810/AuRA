@@ -16,17 +16,25 @@ Our paper is, to the best of our knowledge, the first application of audio [repr
 - [x] Clean Lightning Module
 - [x] Clean factory
 - [x] Inference script
-- [ ] Test training
+- [ ] Test training ---> PAREI AQUI - RECONSTRUCAO
 - [ ] Test inference
 - [ ] Upload checkpoints to MATPAC++ and BEATs decoders
 
 **TODO -- Generation Code**
-- [ ] Clean neural network modules file
-- [ ] Clean configs / constants
-- [ ] Clean dataloader
-- [ ] Clean Lightning Module
-- [ ] Clean eval scripts 
+- [x] Clean neural network modules file
+- [x] Clean configs / constants
+- [x] Clean dataloader
+- [x] Clean Lightning Module
+- [x] Clean inference
+- [x] Clean scaling curve inference
+- [ ] Test training ---> PAREI AQUI - GERACAO
+- [ ] Test inference
 - [ ] Upload checkpoints to TTA models
+
+**TODO -- Utils**
+- [x] Lightning checkpoint conversion script
+- [x] Latent stats script
+- [x] CLAP_100 scripts
 
 ### Setup
 
@@ -42,7 +50,6 @@ Our paper is, to the best of our knowledge, the first application of audio [repr
 **TODO -- Usage**
 - [ ] Write *reconstruction* subsection, with instructions on how to run the models for encoding and decoding a signal
 - [ ] Write *generation* subsection with insturctions on how to run the models for TTA
-- [ ] Write instruction to recalculate paper metrics
 
 ### Data
 
