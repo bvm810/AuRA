@@ -49,7 +49,7 @@ ENCODER_DEFAULT_CONFIGS = {
     "matpac": {
         "type": "matpac",
         "model": {
-            "checkpoint_path": f"{MATPAC_DIR}/matpac_plus_as_48_1_map_enconly.pt",
+            "checkpoint_path": f"{MATPAC_DIR}/matpac_pretrained_encoder.pt",
             "inference_type": "precise",
             "pull_time_dimension": False,
             "concat_freq": True,
