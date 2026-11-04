@@ -99,9 +99,30 @@ Use `--cfg_scale` to override the config's guidance scale. Outputs go to `result
 
 ### Data
 
-**TODO -- Datasets**
-- [ ] Add data cleaning scripts for WavCaps and AudioCaps
-- [ ] Write instructions on how to clean data
+The scripts in `src/data` build the metadata CSVs read by the configs, inside the dataset folders under `~/data` set in `src/common/constants.py`. Paths in the CSVs are relative to each dataset folder, so the folders can be moved.
+
+### AudioSet (decoders)
+
+Place the AudioSet unbalanced-train clips, resampled to 16 kHz, in `~/data/audioset/audio-16k/<first character of the YTID>/<YTID>_<start>_<end>.wav`, the [AudioSet](https://research.google.com/audioset/download.html) `unbalanced_train_segments.csv` in `~/data/audioset/info/`, and the [AudioCaps](https://github.com/cdjkim/audiocaps) `train.csv`, `val.csv` and `test.csv` in `~/data/audioset/info/audiocaps-splits/`. Then run:
+
+```bash
+bash src/data/audioset/prepare_audioset.sh ~/data/audioset
+```
+
+This keeps the clips found on disk, removes every video in the AudioCaps test split, and writes `metadata.csv` with a random 1024-clip validation split.
+
+### AudioCaps and WavCaps (generators)
+
+Once AudioSet is prepared, run the commands below to copy the AudioCaps clips out of it, download and extract [WavCaps](https://huggingface.co/datasets/cvssp/WavCaps), and build the captioning metadata to train the generators. The test split of AudioCaps becomes a separate evaluation set, and the train and validation splits join WavCaps. 
+
+```bash
+python -m src.data.audioset.copy_audiocaps ~/data/audioset/info/audiocaps_filepaths.csv ~/data/audiocaps/audio ~/data/captioning/audio/audiocaps --root ~/data/audioset --test-csv ~/data/audiocaps/metadata.csv
+bash src/data/captioning/download.sh -o ~/data/captioning
+bash src/data/captioning/extract.sh -i ~/data/captioning -o ~/data/captioning/audio/wavcaps
+bash src/data/captioning/prepare_captioning.sh ~/data/captioning
+```
+
+WavCaps audio is about 700 GB compressed, and extracting a subset temporarily needs twice its size; see the headers of `download.sh` and `extract.sh` for their options. `prepare_captioning` removes the AudioCaps clips from WavCaps and merges it with the AudioCaps train and validation splits. It writes `long-segments.csv`, which keeps files between 10 s and 1 h and draws 1024-file validation and test splits outside the AudioSet strongly labelled subset, and `isolated-eval.csv`, the test split without its AudioCaps files.
 
 ### Acknowledgements
 
